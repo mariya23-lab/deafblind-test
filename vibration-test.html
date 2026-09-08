@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Vibration Pattern Tester</title>
+<style>
+  body {
+    font-family: -apple-system, sans-serif;
+    background: #111;
+    color: #eee;
+    padding: 20px;
+    margin: 0;
+  }
+  h1 { font-size: 20px; margin-bottom: 4px; }
+  p.sub { color: #999; font-size: 14px; margin-top: 0; }
+  .group {
+    margin-top: 24px;
+  }
+  .group h2 {
+    font-size: 14px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #7dd3fc;
+    border-bottom: 1px solid #333;
+    padding-bottom: 6px;
+  }
+  button {
+    display: block;
+    width: 100%;
+    padding: 16px;
+    margin: 8px 0;
+    font-size: 16px;
+    background: #1e293b;
+    color: #eee;
+    border: 1px solid #334155;
+    border-radius: 8px;
+  }
+  button:active {
+    background: #334155;
+  }
+  .status {
+    margin-top: 20px;
+    padding: 12px;
+    background: #1e293b;
+    border-radius: 8px;
+    font-size: 13px;
+    color: #999;
+  }
+</style>
+</head>
+<body>
+
+<h1>Vibration pattern tester</h1>
+<p class="sub">Tap each button. Note which ones feel clearly different from each other.</p>
+
+<div class="group">
+  <h2>Obstacle proximity</h2>
+  <button onclick="vibrate([100], 'Obstacle far')">Obstacle: far away</button>
+  <button onclick="vibrate([100,80,100], 'Obstacle medium')">Obstacle: medium distance</button>
+  <button onclick="vibrate([200,50,200,50,200], 'Obstacle close')">Obstacle: close</button>
+  <button onclick="vibrate([400], 'Obstacle very close')">Obstacle: very close / danger</button>
+</div>
+
+<div class="group">
+  <h2>Navigation instructions</h2>
+  <button onclick="vibrate([80], 'Go straight')">Go straight (single short pulse)</button>
+  <button onclick="vibrate([80,150,80], 'Turn right')">Turn right (double pulse)</button>
+  <button onclick="vibrate([80,150,80,150,80], 'Turn left')">Turn left (triple pulse)</button>
+  <button onclick="vibrate([300,100,300], 'Arrived')">Arrived at destination</button>
+</div>
+
+<div class="group">
+  <h2>Object type (example)</h2>
+  <button onclick="vibrate([50,50,50,50,50], 'Person')">Person detected</button>
+  <button onclick="vibrate([250], 'Vehicle')">Vehicle detected</button>
+</div>
+
+<div class="status" id="status">Tap a button to test. Vibration only works on Android Chrome/Firefox — not iOS Safari.</div>
+
+<script>
+function vibrate(pattern, label) {
+  const status = document.getElementById('status');
+  if (!('vibrate' in navigator)) {
+    status.textContent = 'Vibration API not supported on this browser/device.';
+    return;
+  }
+  const ok = navigator.vibrate(pattern);
+  status.textContent = label + ' — pattern: [' + pattern.join(', ') + '] ms — ' + (ok ? 'fired' : 'failed');
+}
+</script>
+
+</body>
+</html>

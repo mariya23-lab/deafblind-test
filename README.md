@@ -1,1 +1,2 @@
 # deafblind-test
+delete

@@ -82,6 +82,7 @@
 <div class="corner" id="corner-favorites">Favorites</div>
 <div class="corner" id="corner-repeat">Repeat</div>
 <div class="corner" id="corner-sos">SOS</div>
+<button id="rawVibeTest" style="position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:12;padding:14px 20px;background:#7f1d1d;color:#fff;border:1px solid #b91c1c;border-radius:8px;font-size:13px;">RAW VIBE TEST (1s)</button>
  
 <div id="entryOverlay">
   <div class="buffer" id="entryBuffer"></div>
@@ -109,8 +110,8 @@
 // (e.g. during the onboarding session described in the paper) — never typed
 // in by the end user themselves, since they can't read or fill in a form.
 // EDIT THESE THREE THINGS before handing the app to a real user:
-const ORS_API_KEY = 'PASTE_YOUR_FREE_OPENROUTESERVICE_KEY_HERE';
-const SOS_NUMBER = '+21600000000'; // emergency contact's phone number
+const ORS_API_KEY = 'eyJvcmciOiI1YjNjZTM1OTc4NTExMTAwMDFjZjYyNDgiLCJpZCI6IjFhODhlMWYyOWEwOTRkN2E4ODc2MGIxOWNiOTA1ZGU5IiwiaCI6Im11cm11cjY0In0=';
+const SOS_NUMBER = '+21654548991'; // emergency contact's phone number
 const FAVORITES = {
   Home:        { lat: 36.8065, lng: 10.1815 },
   Work:        { lat: 36.8100, lng: 10.1700 },
@@ -513,6 +514,11 @@ setupConfirmCorner(document.getElementById('corner-repeat'), 'Repeat', () => {
 });
 setupConfirmCorner(document.getElementById('corner-sos'), 'SOS', () => {
   triggerSOS();
+});
+document.getElementById('rawVibeTest').addEventListener('pointerup', (e) => {
+  e.preventDefault();
+  const ok = navigator.vibrate ? navigator.vibrate(1000) : false;
+  showNavStatus('Raw vibrate() call returned: ' + ok + ' — did you feel it?');
 });
  
 // Tapping outside the favorites list closes it

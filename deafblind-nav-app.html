@@ -111,7 +111,7 @@
 // in by the end user themselves, since they can't read or fill in a form.
 // EDIT THESE THREE THINGS before handing the app to a real user:
 const ORS_API_KEY = 'eyJvcmciOiI1YjNjZTM1OTc4NTExMTAwMDFjZjYyNDgiLCJpZCI6IjFhODhlMWYyOWEwOTRkN2E4ODc2MGIxOWNiOTA1ZGU5IiwiaCI6Im11cm11cjY0In0=';
-const SOS_NUMBER = '+21654548991'; // emergency contact's phone number
+const SOS_NUMBER = '+216000003333'; // emergency contact's phone number
 const FAVORITES = {
   Home:        { lat: 36.8065, lng: 10.1815 },
   Work:        { lat: 36.8100, lng: 10.1700 },
@@ -150,7 +150,14 @@ function showNavStatus(msg, isError = false) {
  
 function vibrateNow(pattern) {
   lastPattern = pattern;
-  if ('vibrate' in navigator) navigator.vibrate(pattern);
+  if (!('vibrate' in navigator)) return;
+  const ok = navigator.vibrate(pattern);
+  if (!ok) {
+    // Browser silently refused — almost always because too much time passed since the
+    // last direct tap (anti-abuse protection). The pattern is still saved in lastPattern,
+    // so tapping "Repeat" fires a fresh, real tap-linked vibrate() call that should work.
+    showNavStatus('Vibration blocked by browser — tap Repeat corner to feel it.', true);
+  }
 }
 function cancelVibration() {
   if ('vibrate' in navigator) navigator.vibrate(0);
@@ -169,6 +176,8 @@ const DANGER_PULSE = [200,100,400];
 let currentStateKey = 'none';
 let loopIntervalId = null;
  
+let obstacleVibeWarningShown = false;
+ 
 function setVibrationState(key) {
   if (key === currentStateKey) return;
   currentStateKey = key;
@@ -176,13 +185,27 @@ function setVibrationState(key) {
   if (!('vibrate' in navigator)) return;
   if (key === 'none') { navigator.vibrate(0); return; }
   if (key === 'danger') {
-    const pulse = () => { navigator.vibrate(DANGER_PULSE); lastPattern = DANGER_PULSE; };
+    const pulse = () => {
+      const ok = navigator.vibrate(DANGER_PULSE);
+      lastPattern = DANGER_PULSE;
+      if (!ok && !obstacleVibeWarningShown) {
+        obstacleVibeWarningShown = true;
+        showNavStatus('Continuous vibration blocked by browser after a delay — see paper limitations.', true);
+      }
+    };
     pulse();
     loopIntervalId = setInterval(pulse, DANGER_INTERVAL_MS);
     return;
   }
   const cfg = OBSTACLE_LOOP[key];
-  const pulse = () => { navigator.vibrate(cfg.pulseMs); lastPattern = [cfg.pulseMs]; };
+  const pulse = () => {
+    const ok = navigator.vibrate(cfg.pulseMs);
+    lastPattern = [cfg.pulseMs];
+    if (!ok && !obstacleVibeWarningShown) {
+      obstacleVibeWarningShown = true;
+      showNavStatus('Continuous vibration blocked by browser after a delay — see paper limitations.', true);
+    }
+  };
   pulse();
   loopIntervalId = setInterval(pulse, cfg.intervalMs);
 }
@@ -531,3 +554,4 @@ loadModel();
  
 </body>
 </html>
+ 

@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Obstacle Detection</title>
+<style>
+  body {
+    font-family: -apple-system, sans-serif;
+    background: #000;
+    color: #eee;
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+  }
+  #video {
+    width: 100%;
+    height: auto;
+    display: block;
+  }
+  #overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+  }
+  #startBtn {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    padding: 20px 32px;
+    font-size: 18px;
+    background: #1e293b;
+    color: #eee;
+    border: 1px solid #334155;
+    border-radius: 8px;
+    z-index: 10;
+  }
+  #status {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    box-sizing: border-box;
+    padding: 12px;
+    background: rgba(0,0,0,0.7);
+    font-size: 13px;
+    color: #9ca3af;
+    max-height: 30vh;
+    overflow-y: auto;
+  }
+  .corner {
+    position: absolute;
+    width: 70px;
+    height: 70px;
+    background: rgba(30,41,59,0.85);
+    border: 1px solid #475569;
+    border-radius: 8px;
+    color: #eee;
+    font-size: 11px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    z-index: 5;
+  }
+  #corner-tl { top: 10px; left: 10px; }
+  #corner-tr { top: 10px; right: 10px; }
+  #corner-bl { bottom: 10px; left: 10px; }
+  #corner-br { bottom: 10px; right: 10px; }
+</style>
+</head>
+<body>
+ 
+<button id="startBtn">Tap to start camera</button>
+<video id="video" autoplay playsinline muted></video>
+<canvas id="overlay" style="display:none;"></canvas>
+ 
+<div class="corner" id="corner-tl">Search</div>
+<div class="corner" id="corner-tr">Favorites</div>
+<div class="corner" id="corner-bl">Repeat</div>
+<div class="corner" id="corner-br">SOS</div>
+ 
+<div id="status">Loading model…</div>
+ 
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.20.0/dist/tf.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.2.3/dist/coco-ssd.min.js"></script>
+ 
+<script>
+const video = document.getElementById('video');
+const statusEl = document.getElementById('status');
+const startBtn = document.getElementById('startBtn');
+ 
+let model = null;
+ 
+const DANGER_CLASSES = ['knife', 'scissors'];
+const VEHICLE_CLASSES = ['car','truck','bus','motorcycle','bicycle'];
+const DANGER_MIN_SCORE = 0.35; // lower threshold — we'd rather over-warn than miss this
+ 
+// CONTINUOUS proximity loops: each bucket repeats for as long as the obstacle stays
+// in that range, getting faster/stronger the closer it is — like a Geiger counter.
+// This replaced the old one-shot-per-detection approach after real-device testing
+// showed discrete pulses were confusing and didn't convey "how close, right now."
+const OBSTACLE_LOOP = {
+  far:       { intervalMs: 900, pulseMs: 100 },
+  medium:    { intervalMs: 450, pulseMs: 150 },
+  close:     { intervalMs: 150, pulseMs: 300 }
+};
+const DANGER_INTERVAL_MS = 450;
+const DANGER_PULSE = [200,100,400]; // sharper, more urgent than any obstacle loop
+ 
+let currentStateKey = 'none';
+let loopIntervalId = null;
+ 
+function setVibrationState(key) {
+  if (key === currentStateKey) return; // already looping this state — let it continue uninterrupted
+  currentStateKey = key;
+  if (loopIntervalId) { clearInterval(loopIntervalId); loopIntervalId = null; }
+  if (!('vibrate' in navigator)) return;
+ 
+  if (key === 'none') {
+    navigator.vibrate(0);
+    return;
+  }
+  if (key === 'danger') {
+    const pulse = () => navigator.vibrate(DANGER_PULSE);
+    pulse();
+    loopIntervalId = setInterval(pulse, DANGER_INTERVAL_MS);
+    return;
+  }
+  const cfg = OBSTACLE_LOOP[key];
+  const pulse = () => navigator.vibrate(cfg.pulseMs);
+  pulse();
+  loopIntervalId = setInterval(pulse, cfg.intervalMs);
+}
+ 
+// Rough proximity estimate: bigger bounding box relative to frame = closer.
+// This is a stand-in for real depth sensing (see paper limitations).
+function proximityBucket(bboxAreaRatio) {
+  if (bboxAreaRatio > 0.35) return 'veryClose';
+  if (bboxAreaRatio > 0.18) return 'close';
+  if (bboxAreaRatio > 0.07) return 'medium';
+  return 'far';
+}
+ 
+async function setup() {
+  statusEl.textContent = 'Loading detection model…';
+  try {
+    if (typeof cocoSsd === 'undefined') {
+      throw new Error('coco-ssd script did not load (check network/CDN access).');
+    }
+    model = await cocoSsd.load();
+    statusEl.textContent = 'Model loaded. Tap "Tap to start camera" to begin.';
+  } catch (err) {
+    statusEl.textContent = 'Model load error: ' + err.message;
+    console.error(err);
+  }
+}
+ 
+async function startCamera() {
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: 'environment' },
+      audio: false
+    });
+    video.srcObject = stream;
+    startBtn.style.display = 'none';
+    detectLoop();
+  } catch (err) {
+    statusEl.textContent = 'Camera error: ' + err.message;
+  }
+}
+ 
+async function detectLoop() {
+  if (!model || video.readyState < 2) {
+    requestAnimationFrame(detectLoop);
+    return;
+  }
+ 
+  const predictions = await model.detect(video);
+  const frameArea = video.videoWidth * video.videoHeight;
+ 
+  if (predictions.length === 0) {
+    setVibrationState('none');
+    statusEl.textContent = 'No obstacles detected.';
+  } else {
+    // Priority 1: any dangerous object, regardless of size, above a lower confidence bar.
+    // This loops continuously until no longer detected — see setVibrationState.
+    const danger = predictions.find(p => DANGER_CLASSES.includes(p.class) && p.score >= DANGER_MIN_SCORE);
+ 
+    if (danger) {
+      setVibrationState('danger');
+      statusEl.textContent = `⚠ DANGER: ${danger.class} detected (${Math.round(danger.score*100)}%)`;
+      requestAnimationFrame(detectLoop);
+      return;
+    }
+ 
+    // Priority 2: largest (closest) detection drives the continuous proximity loop.
+    // NOTE: object category (person/vehicle) is shown in the status text for your own
+    // debugging, but no longer overrides the vibration — proximity is what the user
+    // actually needs to feel continuously. Category-specific vibration layered on top
+    // is a reasonable future-work addition once the base proximity loop is validated.
+    let closest = predictions[0];
+    let closestArea = 0;
+    for (const p of predictions) {
+      const area = p.bbox[2] * p.bbox[3];
+      if (area > closestArea) { closestArea = area; closest = p; }
+    }
+ 
+    const ratio = closestArea / frameArea;
+    const bucket = proximityBucket(ratio); // 'far' | 'medium' | 'close' | 'veryClose'
+    const loopKey = bucket === 'veryClose' ? 'close' : bucket;
+    setVibrationState(loopKey);
+ 
+    statusEl.textContent = predictions
+      .map(p => `${p.class} (${Math.round(p.score*100)}%)`)
+      .join(', ') + ` — closest: ${closest.class}, proximity: ${bucket}`;
+  }
+ 
+  requestAnimationFrame(detectLoop);
+}
+ 
+startBtn.addEventListener('click', startCamera);
+setup();
+</script>
+ 
+</body>
+</html>

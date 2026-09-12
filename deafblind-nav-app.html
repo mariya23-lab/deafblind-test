@@ -22,28 +22,20 @@
     background: #111; display: flex; flex-direction: column;
     align-items: center; justify-content: center; padding: 24px; box-sizing: border-box;
   }
-  #startOverlay h1 { font-size: 18px; text-align: center; }
-  #startOverlay input {
-    width: 100%; max-width: 320px; padding: 12px; margin: 6px 0;
-    background: #1e293b; color: #eee; border: 1px solid #334155; border-radius: 8px; font-size: 15px;
-  }
-  #startOverlay label { font-size: 12px; color: #999; align-self: flex-start; max-width: 320px; width: 100%; }
-  #startBtn {
-    margin-top: 16px; padding: 16px 32px; font-size: 16px;
-    background: #1e293b; color: #eee; border: 1px solid #334155; border-radius: 8px; width: 100%; max-width: 320px;
-  }
- 
+  #startOverlay h1 { font-size: 18px; text-align: center; opacity: 0.6; }
+
   .corner {
     position: fixed; width: 76px; height: 76px;
     background: rgba(15,23,42,0.85); border: 1px solid #475569; border-radius: 10px;
     color: #eee; font-size: 11px; display: flex; align-items: center; justify-content: center;
     text-align: center; z-index: 10; user-select: none; -webkit-user-select: none;
+    cursor: pointer; touch-action: manipulation;
   }
   #corner-search   { top: 12px; left: 12px; }
   #corner-favorites{ top: 12px; right: 12px; }
   #corner-repeat   { bottom: 12px; left: 12px; }
   #corner-sos      { bottom: 12px; right: 12px; background: rgba(127,29,29,0.85); border-color: #b91c1c; }
- 
+
   #entryOverlay {
     position: fixed; inset: 0; z-index: 15; background: rgba(0,0,0,0.75);
     display: none; flex-direction: column; align-items: center; justify-content: center;
@@ -60,11 +52,11 @@
     font-size: 13px; color: #999; margin-top: 20px;
   }
   #tapZone:active { background: #334155; }
- 
+
   #favList { position: fixed; inset: 0; z-index: 15; background: rgba(0,0,0,0.9); display: none; flex-direction: column; padding: 20px; box-sizing: border-box; }
   #favList.active { display: flex; }
   .favItem { padding: 18px; margin: 6px 0; background: #1e293b; border: 1px solid #334155; border-radius: 8px; font-size: 16px; }
- 
+
   #status {
     position: fixed; bottom: 96px; left: 0; width: 100%; box-sizing: border-box;
     padding: 10px 12px; background: rgba(0,0,0,0.7); font-size: 12px; color: #9ca3af;
@@ -73,54 +65,51 @@
 </style>
 </head>
 <body>
- 
+
 <div id="startOverlay">
-  <h1>Deafblind Navigation Assistant — Prototype</h1>
-  <label>OpenRouteService API key (needed only for GPS navigation)</label>
-  <input type="text" id="apiKeyInput" placeholder="Paste your free ORS key here">
-  <label>Emergency contact phone number (for SOS)</label>
-  <input type="text" id="sosNumberInput" placeholder="e.g. +21612345678">
-  <button id="startBtn">Start app (allow camera)</button>
+  <h1>Tap anywhere to begin</h1>
 </div>
- 
+
 <video id="video" autoplay playsinline muted></video>
- 
+
 <div class="corner" id="corner-search">Search</div>
 <div class="corner" id="corner-favorites">Favorites</div>
 <div class="corner" id="corner-repeat">Repeat</div>
 <div class="corner" id="corner-sos">SOS</div>
- 
+
 <div id="entryOverlay">
   <div class="buffer" id="entryBuffer"></div>
   <div class="morseBuffer" id="morseBuffer"></div>
   <div id="tapZone">Tap = dot<br>Hold = dash<br>Hold 2s to finish</div>
   <div class="hint">Entering destination. Short tap = dot, press-and-hold = dash. Pause briefly between letters. Press and hold the circle for 2 seconds when the destination name is complete.</div>
 </div>
- 
+
 <div id="favList">
   <h2 style="font-size:14px;color:#7dd3fc;">Favorites — tap once to preview, tap again to go</h2>
   <div class="favItem" data-name="Home">Home</div>
   <div class="favItem" data-name="Work">Work</div>
   <div class="favItem" data-name="Supermarket">Supermarket</div>
 </div>
- 
+
 <div id="status">Loading model…</div>
- 
+
 <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.20.0/dist/tf.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.2.3/dist/coco-ssd.min.js"></script>
- 
+
 <script>
 /* ================= CONFIG ================= */
-// Edit these coordinates to real places before testing navigation to favorites.
+// These are set ONCE by the person setting up the app for a deafblind user
+// (e.g. during the onboarding session described in the paper) — never typed
+// in by the end user themselves, since they can't read or fill in a form.
+// EDIT THESE THREE THINGS before handing the app to a real user:
+const ORS_API_KEY = 'PASTE_YOUR_FREE_OPENROUTESERVICE_KEY_HERE';
+const SOS_NUMBER = '+21600000000'; // emergency contact's phone number
 const FAVORITES = {
   Home:        { lat: 36.8065, lng: 10.1815 },
   Work:        { lat: 36.8100, lng: 10.1700 },
   Supermarket: { lat: 36.8050, lng: 10.1900 }
 };
- 
-let ORS_API_KEY = '';
-let SOS_NUMBER = '';
- 
+
 /* ================= FIXED VIBRATION PATTERNS ================= */
 const PATTERNS = {
   person:    [50,50,50,50,50],
@@ -140,9 +129,9 @@ const PATTERNS = {
 const DANGER_CLASSES = ['knife', 'scissors'];
 const VEHICLE_CLASSES = ['car','truck','bus','motorcycle','bicycle'];
 const DANGER_MIN_SCORE = 0.35;
- 
+
 let lastPattern = PATTERNS.far;
- 
+
 function vibrateNow(pattern) {
   lastPattern = pattern;
   if ('vibrate' in navigator) navigator.vibrate(pattern);
@@ -150,7 +139,7 @@ function vibrateNow(pattern) {
 function cancelVibration() {
   if ('vibrate' in navigator) navigator.vibrate(0);
 }
- 
+
 // CONTINUOUS proximity/danger loops — validated on real devices to feel far clearer
 // than one-shot pulses. See obstacle-detection.html for the full design rationale.
 const OBSTACLE_LOOP = {
@@ -160,10 +149,10 @@ const OBSTACLE_LOOP = {
 };
 const DANGER_INTERVAL_MS = 450;
 const DANGER_PULSE = [200,100,400];
- 
+
 let currentStateKey = 'none';
 let loopIntervalId = null;
- 
+
 function setVibrationState(key) {
   if (key === currentStateKey) return;
   currentStateKey = key;
@@ -181,7 +170,7 @@ function setVibrationState(key) {
   pulse();
   loopIntervalId = setInterval(pulse, cfg.intervalMs);
 }
- 
+
 /* ================= MORSE ENCODE / DECODE ================= */
 const MORSE = {
   A:'.-',B:'-...',C:'-.-.',D:'-..',E:'.',F:'..-.',G:'--.',H:'....',I:'..',J:'.---',
@@ -191,7 +180,7 @@ const MORSE = {
   '5':'.....','6':'-....','7':'--...','8':'---..','9':'----.'
 };
 const MORSE_REVERSE = Object.fromEntries(Object.entries(MORSE).map(([k,v]) => [v,k]));
- 
+
 // Builds a navigator.vibrate()-style pattern array (alternating on/off ms) for a word.
 function wordToVibrationPattern(word) {
   const DOT = 80, DASH = 240, GAP = 80, LETTER_GAP = 240;
@@ -209,14 +198,14 @@ function wordToVibrationPattern(word) {
   pattern.pop();
   return pattern;
 }
- 
+
 function playMorseWord(word) {
   cancelVibration();
   const pattern = wordToVibrationPattern(word);
   lastPattern = pattern;
   if ('vibrate' in navigator) navigator.vibrate(pattern);
 }
- 
+
 /* ================= TAP-TO-MORSE TEXT ENTRY ================= */
 let entryActive = false;
 let currentMorseSymbols = '';
@@ -227,7 +216,7 @@ let holdTimer = null;
 const DASH_THRESHOLD_MS = 250;
 const LETTER_PAUSE_MS = 900;
 const FINISH_HOLD_MS = 2000;
- 
+
 function openEntry() {
   entryActive = true;
   currentMorseSymbols = '';
@@ -236,12 +225,12 @@ function openEntry() {
   document.getElementById('morseBuffer').textContent = '';
   document.getElementById('entryOverlay').classList.add('active');
 }
- 
+
 function closeEntry() {
   entryActive = false;
   document.getElementById('entryOverlay').classList.remove('active');
 }
- 
+
 function finalizeLetter() {
   if (currentMorseSymbols.length === 0) return;
   const letter = MORSE_REVERSE[currentMorseSymbols] || '?';
@@ -251,10 +240,10 @@ function finalizeLetter() {
   currentMorseSymbols = '';
   document.getElementById('morseBuffer').textContent = '';
 }
- 
+
 function setupTapZone() {
   const zone = document.getElementById('tapZone');
- 
+
   zone.addEventListener('pointerdown', (e) => {
     tapDownTime = Date.now();
     holdTimer = setTimeout(() => {
@@ -264,21 +253,21 @@ function setupTapZone() {
       handleDestinationEntered(destinationBuffer);
     }, FINISH_HOLD_MS);
   });
- 
+
   zone.addEventListener('pointerup', (e) => {
     const duration = Date.now() - tapDownTime;
     clearTimeout(holdTimer);
     if (duration >= FINISH_HOLD_MS) return; // already handled by hold timer
- 
+
     const symbol = duration < DASH_THRESHOLD_MS ? '.' : '-';
     currentMorseSymbols += symbol;
     document.getElementById('morseBuffer').textContent = currentMorseSymbols;
- 
+
     clearTimeout(letterTimeout);
     letterTimeout = setTimeout(finalizeLetter, LETTER_PAUSE_MS);
   });
 }
- 
+
 async function handleDestinationEntered(name) {
   if (!name) return;
   document.getElementById('status').textContent = 'Destination entered: ' + name + ' — geocoding…';
@@ -295,11 +284,12 @@ async function handleDestinationEntered(name) {
     document.getElementById('status').textContent = 'Geocoding error: ' + err.message;
   }
 }
- 
+
 /* ================= CORNER TAP (single=preview, double=activate) ================= */
 function setupCornerTapBehavior(el, label, onActivate) {
   let lastTapTime = 0;
-  el.addEventListener('click', () => {
+  el.addEventListener('pointerup', (e) => {
+    e.preventDefault();
     const now = Date.now();
     if (now - lastTapTime < 600) {
       cancelVibration();
@@ -310,19 +300,19 @@ function setupCornerTapBehavior(el, label, onActivate) {
     lastTapTime = now;
   });
 }
- 
+
 /* ================= GPS NAVIGATION ================= */
 let navActive = false;
 let watchId = null;
 let currentDestination = null;
- 
+
 function stepToPattern(type) {
   if ([0,2,4].includes(type)) return PATTERNS.left;
   if ([1,3,5].includes(type)) return PATTERNS.right;
   if (type === 10) return PATTERNS.arrived;
   return PATTERNS.straight;
 }
- 
+
 async function getRoute(startLat, startLng, destLat, destLng) {
   const res = await fetch('https://api.openrouteservice.org/v2/directions/foot-walking/geojson', {
     method: 'POST',
@@ -333,10 +323,10 @@ async function getRoute(startLat, startLng, destLat, destLng) {
   const data = await res.json();
   return data.features[0].properties.segments[0].steps;
 }
- 
+
 function startNavigation(destLat, destLng, label) {
-  if (!ORS_API_KEY) {
-    document.getElementById('status').textContent = 'No ORS API key set — cannot start navigation.';
+  if (!ORS_API_KEY || ORS_API_KEY.startsWith('PASTE_YOUR')) {
+    document.getElementById('status').textContent = 'No ORS API key configured — edit ORS_API_KEY at the top of the script.';
     return;
   }
   navigator.geolocation.getCurrentPosition(async (pos) => {
@@ -346,7 +336,7 @@ function startNavigation(destLat, destLng, label) {
       currentDestination = { lat: destLat, lng: destLng, label };
       vibrateNow(stepToPattern(steps[0].type));
       document.getElementById('status').textContent = 'Navigating to ' + label + ' — ' + steps.length + ' steps.';
- 
+
       if (watchId) navigator.geolocation.clearWatch(watchId);
       watchId = navigator.geolocation.watchPosition((p) => {
         document.getElementById('status').textContent =
@@ -358,7 +348,7 @@ function startNavigation(destLat, destLng, label) {
       }, (err) => {
         document.getElementById('status').textContent = 'GPS error: ' + err.message;
       }, { enableHighAccuracy: true, maximumAge: 1000 });
- 
+
     } catch (err) {
       document.getElementById('status').textContent = 'Navigation error: ' + err.message;
     }
@@ -366,7 +356,7 @@ function startNavigation(destLat, destLng, label) {
     document.getElementById('status').textContent = 'Location error: ' + err.message;
   }, { enableHighAccuracy: true });
 }
- 
+
 /* ================= SOS ================= */
 function triggerSOS() {
   vibrateNow(PATTERNS.sosSent);
@@ -386,13 +376,14 @@ function triggerSOS() {
     document.getElementById('status').textContent = 'SOS: could not get location — ' + err.message;
   }, { enableHighAccuracy: true });
 }
- 
+
 /* ================= FAVORITES LIST ================= */
 function setupFavorites() {
   const items = document.querySelectorAll('.favItem');
   items.forEach(item => {
     let lastTap = 0;
-    item.addEventListener('click', () => {
+    item.addEventListener('pointerup', (e) => {
+      e.preventDefault();
       const now = Date.now();
       const name = item.getAttribute('data-name');
       if (now - lastTap < 600) {
@@ -407,18 +398,18 @@ function setupFavorites() {
     });
   });
 }
- 
+
 /* ================= CAMERA OBSTACLE DETECTION ================= */
 const video = document.getElementById('video');
 let model = null;
- 
+
 function proximityBucket(ratio) {
   if (ratio > 0.35) return 'veryClose';
   if (ratio > 0.18) return 'close';
   if (ratio > 0.07) return 'medium';
   return 'far';
 }
- 
+
 async function loadModel() {
   try {
     if (typeof cocoSsd === 'undefined') throw new Error('coco-ssd script did not load.');
@@ -428,7 +419,7 @@ async function loadModel() {
     document.getElementById('status').textContent = 'Model load error: ' + err.message;
   }
 }
- 
+
 async function detectLoop() {
   if (!model || video.readyState < 2 || entryActive) {
     setTimeout(detectLoop, 300);
@@ -436,7 +427,7 @@ async function detectLoop() {
   }
   const predictions = await model.detect(video);
   const frameArea = video.videoWidth * video.videoHeight;
- 
+
   if (predictions.length === 0) {
     setVibrationState('none');
   } else {
@@ -464,12 +455,9 @@ async function detectLoop() {
   // steadier on phone hardware, and plenty fast enough for walking-pace obstacles.
   setTimeout(detectLoop, 300);
 }
- 
+
 /* ================= INIT ================= */
-document.getElementById('startBtn').addEventListener('click', async () => {
-  ORS_API_KEY = document.getElementById('apiKeyInput').value.trim();
-  SOS_NUMBER = document.getElementById('sosNumberInput').value.trim();
- 
+document.getElementById('startOverlay').addEventListener('pointerup', async () => {
   try {
     const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false });
     video.srcObject = stream;
@@ -477,13 +465,12 @@ document.getElementById('startBtn').addEventListener('click', async () => {
     detectLoop();
   } catch (err) {
     document.getElementById('status').textContent = 'Camera error: ' + err.message;
-    return;
   }
-});
- 
+}, { once: true });
+
 setupTapZone();
 setupFavorites();
- 
+
 setupCornerTapBehavior(document.getElementById('corner-search'), 'Search', () => {
   openEntry();
 });
@@ -496,14 +483,14 @@ setupCornerTapBehavior(document.getElementById('corner-repeat'), 'Repeat', () =>
 setupCornerTapBehavior(document.getElementById('corner-sos'), 'SOS', () => {
   triggerSOS();
 });
- 
+
 // Tapping outside the favorites list closes it
-document.getElementById('favList').addEventListener('click', (e) => {
+document.getElementById('favList').addEventListener('pointerup', (e) => {
   if (e.target.id === 'favList') e.currentTarget.classList.remove('active');
 });
- 
+
 loadModel();
 </script>
- 
+
 </body>
 </html>

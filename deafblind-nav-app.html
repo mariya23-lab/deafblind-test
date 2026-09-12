@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>Deafblind Navigation Assistant - Prototype</title>
 <!-- DEBUG TOOL: shows a console/inspector directly on the phone screen (tap the floating
      circle button, bottom-right, once the page loads) so we can see real errors without
@@ -62,6 +62,12 @@
     padding: 10px 12px; background: rgba(0,0,0,0.7); font-size: 12px; color: #9ca3af;
     max-height: 22vh; overflow-y: auto; z-index: 8; white-space: pre-wrap;
   }
+  #navStatus {
+    position: fixed; bottom: 0; left: 0; width: 100%; box-sizing: border-box;
+    padding: 10px 12px; background: rgba(30,58,138,0.85); font-size: 13px; color: #eee;
+    z-index: 9; white-space: pre-wrap; display: none;
+  }
+  #navStatus.visible { display: block; }
 </style>
 </head>
 <body>
@@ -92,6 +98,7 @@
 </div>
  
 <div id="status">Loading model…</div>
+<div id="navStatus"></div>
  
 <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.20.0/dist/tf.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.2.3/dist/coco-ssd.min.js"></script>
@@ -105,9 +112,9 @@
 const ORS_API_KEY = 'PASTE_YOUR_FREE_OPENROUTESERVICE_KEY_HERE';
 const SOS_NUMBER = '+21600000000'; // emergency contact's phone number
 const FAVORITES = {
-  Home:        { lat: 36.8675, lng: 10.1654 },
+  Home:        { lat: 36.8065, lng: 10.1815 },
   Work:        { lat: 36.8100, lng: 10.1700 },
-  Supermarket: { lat: 36.866003, lng: 10.169003 }
+  Supermarket: { lat: 36.8050, lng: 10.1900 }
 };
  
 /* ================= FIXED VIBRATION PATTERNS ================= */
@@ -131,6 +138,14 @@ const VEHICLE_CLASSES = ['car','truck','bus','motorcycle','bicycle'];
 const DANGER_MIN_SCORE = 0.35;
  
 let lastPattern = PATTERNS.far;
+ 
+function showNavStatus(msg, isError = false) {
+  const el = document.getElementById('navStatus');
+  el.textContent = msg;
+  el.classList.add('visible');
+  el.style.background = isError ? 'rgba(127,29,29,0.9)' : 'rgba(30,58,138,0.85)';
+  console.log('[navStatus]', msg);
+}
  
 function vibrateNow(pattern) {
   lastPattern = pattern;
@@ -282,34 +297,27 @@ function setupTapZone() {
  
 async function handleDestinationEntered(name) {
   if (!name) return;
-  document.getElementById('status').textContent = 'Destination entered: ' + name + ' — geocoding…';
+  showNavStatus('Destination entered: ' + name + ' — looking it up…');
   try {
     // Free geocoding via Nominatim (OpenStreetMap). Rate-limited; fine for prototype/testing.
     const res = await fetch('https://nominatim.openstreetmap.org/search?format=json&q=' + encodeURIComponent(name));
     const results = await res.json();
     if (results.length === 0) {
-      document.getElementById('status').textContent = 'Could not find location: ' + name;
+      showNavStatus('Could not find location: "' + name + '" — try a more specific or different name.', true);
       return;
     }
     startNavigation(parseFloat(results[0].lat), parseFloat(results[0].lon), name);
   } catch (err) {
-    document.getElementById('status').textContent = 'Geocoding error: ' + err.message;
+    showNavStatus('Geocoding error: ' + err.message, true);
+    console.error(err);
   }
 }
  
 /* ================= CORNER TAP ================= */
-// Search/Favorites/Repeat: single tap activates immediately (low-risk, no confirmation needed
-// once the user has learned the four corners during onboarding).
-function setupInstantCorner(el, onActivate) {
-  el.addEventListener('pointerup', (e) => {
-    e.preventDefault();
-    vibrateNow(PATTERNS.letterConfirm); // quick tap-received acknowledgment
-    onActivate();
-  });
-}
- 
-// SOS: requires two taps within 600ms — the one deliberately harder-to-trigger corner,
-// since accidentally calling emergency services is worse than one extra tap.
+// All four corners require two taps within 600ms: first tap previews the name
+// (Morse vibration), second tap confirms/activates. This is deliberate — a single
+// accidental brush against a corner (e.g. while adjusting grip) should never trigger
+// an action on its own.
 function setupConfirmCorner(el, label, onActivate) {
   let lastTapTime = 0;
   el.addEventListener('pointerup', (e) => {
@@ -350,34 +358,38 @@ async function getRoute(startLat, startLng, destLat, destLng) {
  
 function startNavigation(destLat, destLng, label) {
   if (!ORS_API_KEY || ORS_API_KEY.startsWith('PASTE_YOUR')) {
-    document.getElementById('status').textContent = 'No ORS API key configured — edit ORS_API_KEY at the top of the script.';
+    showNavStatus('No ORS API key configured — edit ORS_API_KEY at the top of the script.', true);
     return;
   }
+  showNavStatus('Getting your location…');
   navigator.geolocation.getCurrentPosition(async (pos) => {
     try {
+      showNavStatus('Computing route to ' + label + '…');
       const steps = await getRoute(pos.coords.latitude, pos.coords.longitude, destLat, destLng);
       navActive = true;
       currentDestination = { lat: destLat, lng: destLng, label };
       vibrateNow(stepToPattern(steps[0].type));
-      document.getElementById('status').textContent = 'Navigating to ' + label + ' — ' + steps.length + ' steps.';
+      showNavStatus('Navigating to ' + label + ' — ' + steps.length + ' steps.');
  
       if (watchId) navigator.geolocation.clearWatch(watchId);
       watchId = navigator.geolocation.watchPosition((p) => {
-        document.getElementById('status').textContent =
-          'Navigating to ' + label + ' | lat ' + p.coords.latitude.toFixed(5) + ', lng ' + p.coords.longitude.toFixed(5);
+        showNavStatus('Navigating to ' + label + ' | lat ' + p.coords.latitude.toFixed(5) + ', lng ' + p.coords.longitude.toFixed(5));
         // NOTE (prototype limitation): this does not yet auto-advance through
         // each route step based on proximity to the step's coordinates.
         // Next iteration: compare live position to steps[i] waypoint coords
         // and call vibrateNow(stepToPattern(steps[i].type)) as each is reached.
       }, (err) => {
-        document.getElementById('status').textContent = 'GPS error: ' + err.message;
+        showNavStatus('GPS error: ' + err.message, true);
+        console.error(err);
       }, { enableHighAccuracy: true, maximumAge: 1000 });
  
     } catch (err) {
-      document.getElementById('status').textContent = 'Navigation error: ' + err.message;
+      showNavStatus('Navigation error: ' + err.message, true);
+      console.error(err);
     }
   }, (err) => {
-    document.getElementById('status').textContent = 'Location error: ' + err.message;
+    showNavStatus('Location error: ' + err.message + ' — check location permission is allowed for this site.', true);
+    console.error(err);
   }, { enableHighAccuracy: true });
 }
  
@@ -385,14 +397,14 @@ function startNavigation(destLat, destLng, label) {
 function triggerSOS() {
   vibrateNow(PATTERNS.sosSent);
   if (!SOS_NUMBER || SOS_NUMBER === '+21600000000') {
-    document.getElementById('status').textContent = 'SOS pressed, but no real emergency number configured.';
+    showNavStatus('SOS pressed, but no real emergency number configured.', true);
     return;
   }
   // NOTE: iOS/Android both require a human tap to confirm placing the call — a webpage
   // cannot silently auto-dial for privacy/security reasons on any platform. This opens
   // the phone's own call screen with the number already filled in; the phone's native
   // call UI (with its own confirmation) takes over from here.
-  document.getElementById('status').textContent = 'SOS: calling ' + SOS_NUMBER + '…';
+  showNavStatus('SOS: calling ' + SOS_NUMBER + '…');
   window.location.href = `tel:${SOS_NUMBER}`;
 }
  
@@ -490,13 +502,13 @@ document.getElementById('startOverlay').addEventListener('pointerup', async () =
 setupTapZone();
 setupFavorites();
  
-setupInstantCorner(document.getElementById('corner-search'), () => {
+setupConfirmCorner(document.getElementById('corner-search'), 'Search', () => {
   openEntry();
 });
-setupInstantCorner(document.getElementById('corner-favorites'), () => {
+setupConfirmCorner(document.getElementById('corner-favorites'), 'Favorites', () => {
   document.getElementById('favList').classList.add('active');
 });
-setupInstantCorner(document.getElementById('corner-repeat'), () => {
+setupConfirmCorner(document.getElementById('corner-repeat'), 'Repeat', () => {
   if ('vibrate' in navigator) navigator.vibrate(lastPattern);
 });
 setupConfirmCorner(document.getElementById('corner-sos'), 'SOS', () => {

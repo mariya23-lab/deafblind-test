@@ -4,6 +4,11 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Deafblind Navigation Assistant - Prototype</title>
+<!-- DEBUG TOOL: shows a console/inspector directly on the phone screen (tap the floating
+     circle button, bottom-right, once the page loads) so we can see real errors without
+     needing a Mac for Safari's remote inspector. Remove this line once debugging is done. -->
+<script src="https://cdn.jsdelivr.net/npm/eruda"></script>
+<script>eruda.init();</script>
 <style>
   html, body {
     margin: 0; padding: 0; overflow: hidden;
@@ -426,7 +431,7 @@ async function loadModel() {
  
 async function detectLoop() {
   if (!model || video.readyState < 2 || entryActive) {
-    requestAnimationFrame(detectLoop);
+    setTimeout(detectLoop, 300);
     return;
   }
   const predictions = await model.detect(video);
@@ -455,7 +460,9 @@ async function detectLoop() {
       }
     }
   }
-  requestAnimationFrame(detectLoop);
+  // Throttled to ~3 detections/second instead of every animation frame — much
+  // steadier on phone hardware, and plenty fast enough for walking-pace obstacles.
+  setTimeout(detectLoop, 300);
 }
  
 /* ================= INIT ================= */
